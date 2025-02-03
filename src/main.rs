@@ -37,7 +37,7 @@ async fn main() {
     let socket = tokio::net::TcpListener::bind(&addr)
         .await
         .expect("Couldn't bind socket");
-    println!("Listening on {}", addr);
+    eprintln!("Listening on {}", addr);
 
     let state: SharedState = Arc::new(RwLock::new(HashMap::new()));
 
@@ -59,7 +59,7 @@ async fn main() {
     .await
     .expect("Couldn't start server");
 
-    println!("Server stopped");
+    eprintln!("Server stopped");
 }
 
 async fn track_ip(
@@ -95,5 +95,5 @@ async fn shutdown_signal() {
     tokio::signal::ctrl_c()
         .await
         .expect("Failed to listen for ctrl-c event");
-    println!("Shutting down...");
+    eprintln!("Shutting down...");
 }
