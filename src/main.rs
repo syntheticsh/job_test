@@ -27,7 +27,6 @@ struct Args {
 #[tokio::main]
 async fn main() {
     let args = Args::parse();
-    println!("{:?}", args);
     let addr = match args.listening_address.parse::<std::net::SocketAddr>() {
         Ok(addr) => addr,
         Err(err) => {
