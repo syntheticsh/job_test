@@ -1,18 +1,19 @@
 use axum::extract::{ConnectInfo, Request};
 use std::net::SocketAddr;
 use std::task::{Context, Poll};
+use tokio::sync::mpsc::UnboundedSender;
 use tower::Service;
 
-use crate::SharedState;
+type Writer = UnboundedSender<String>;
 
 #[derive(Debug, Clone)]
 pub struct IpCounterLayer {
-    state: SharedState,
+    writer: Writer,
 }
 
 impl IpCounterLayer {
-    pub fn new(state: SharedState) -> Self {
-        IpCounterLayer { state }
+    pub fn new(state: Writer) -> Self {
+        IpCounterLayer { writer: state }
     }
 }
 
@@ -20,19 +21,19 @@ impl<S> tower::Layer<S> for IpCounterLayer {
     type Service = IpCounter<S>;
 
     fn layer(&self, inner: S) -> Self::Service {
-        IpCounter::new(inner, self.state.clone())
+        IpCounter::new(inner, self.writer.clone())
     }
 }
 
 #[derive(Debug, Clone)]
 pub struct IpCounter<S> {
     inner: S,
-    state: SharedState,
+    writer: Writer,
 }
 
 impl<S> IpCounter<S> {
-    fn new(inner: S, state: SharedState) -> Self {
-        IpCounter { inner, state }
+    fn new(inner: S, state: Writer) -> Self {
+        IpCounter { inner, writer: state }
     }
 }
 
@@ -52,8 +53,7 @@ where
         if let Some(addr) = request.extensions().get::<ConnectInfo<SocketAddr>>() {
             let ip = addr.ip().to_string();
 
-            let mut state = self.state.write().unwrap();
-            state.entry(ip).and_modify(|e| *e += 1).or_insert(1);
+            self.writer.send(ip).expect("Couldn't send IP to counter");
         }
 
         self.inner.call(request)

@@ -5,12 +5,10 @@ use clap::Parser;
 use ip_counter::IpCounterLayer;
 use std::collections::HashMap;
 use std::net::SocketAddr;
-use std::sync::{Arc, RwLock};
 use std::time::Duration;
+use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver};
 use tower::ServiceBuilder;
 use tower_http::timeout::TimeoutLayer;
-
-pub type SharedState = Arc<RwLock<HashMap<String, usize>>>;
 
 #[derive(Parser, Debug)]
 struct Args {
@@ -35,17 +33,17 @@ async fn main() {
         .expect("Couldn't bind socket");
     eprintln!("Listening on {}", addr);
 
-    let state: SharedState = Arc::new(RwLock::new(HashMap::new()));
+    let (writer, reader) = unbounded_channel();
 
     let app = Router::new()
         .route("/ping", get(|| async { "pong" }))
         .layer(
             ServiceBuilder::new()
-                .layer(IpCounterLayer::new(state.clone()))
+                .layer(IpCounterLayer::new(writer))
                 .layer(TimeoutLayer::new(Duration::from_secs(args.timeout))),
         );
 
-    tokio::spawn(ip_printer(state));
+    tokio::spawn(ip_printer(reader));
 
     axum::serve(
         socket,
@@ -58,10 +56,13 @@ async fn main() {
     eprintln!("Server stopped");
 }
 
-async fn ip_printer(state: SharedState) {
+async fn ip_printer(mut receiver: UnboundedReceiver<String>) {
+    let mut state = HashMap::new();
     loop {
         tokio::time::sleep(Duration::from_secs(1)).await;
-        let state = state.read().unwrap();
+        while let Ok(ip) = receiver.try_recv() {
+            state.entry(ip).and_modify(|e| *e += 1).or_insert(1);
+        }
         let mut addr_vec = state.iter().collect::<Vec<_>>();
         addr_vec.sort_by(|a, b| b.1.cmp(a.1));
         let mut output = String::from("IPs:\n");
